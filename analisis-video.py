@@ -222,51 +222,121 @@ class FortniteClipExtractor:
         
         return highlights
     
-    def extract_clips(self, video_path, highlights, padding=2):
-        """
-        Extrae los clips destacados del video.
-        
-        Args:
-            video_path: Ruta al archivo de video
-            highlights: Lista de momentos destacables
-            padding: Segundos adicionales antes y después del momento
-            
-        Returns:
-            Lista de rutas a los clips generados
-        """
-        if not highlights:
-            print("No se encontraron momentos destacables en el video.")
-            return []
-            
-        video_filename = Path(video_path).stem
-        clips_paths = []
-        
-        for i, highlight in enumerate(highlights):
-            start_time = max(0, highlight["start"] - padding)
-            end_time = highlight["end"] + padding
-            duration = end_time - start_time
-            
-            tipo = highlight["tipo"]
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = f"{video_filename}_{tipo}_{i+1}_{timestamp}.mp4"
-            output_path = self.output_folder / output_filename
-            
-            # Usar FFmpeg para extraer el clip
-            cmd = [
-                "ffmpeg", "-i", video_path,
-                "-ss", str(start_time),
-                "-t", str(duration),
-                "-c:v", "libx264", "-c:a", "aac",
-                "-preset", "fast", "-crf", "22",
-                str(output_path)
-            ]
-            
-            print(f"Extrayendo clip {i+1}/{len(highlights)}: {start_time:.2f}s - {end_time:.2f}s")
-            subprocess.run(cmd, check=True)
-            clips_paths.append(output_path)
-            
-        return clips_paths
-    
+def generate_title_description(self, tipo, descripcion):
+    """
+    Genera un título y una descripción llamativa para el clip usando Ollama.
+
+    Args:
+        tipo: Tipo de momento destacado (ej. "eliminación", "victoria", etc.).
+        descripcion: Descripción breve del evento.
+
+    Returns:
+        Un diccionario con "titulo" y "descripcion" generados.
+    """
+    prompt = f"""
+    Eres un creador de contenido para plataformas como YouTube y TikTok. 
+    Genera un título llamativo y una descripción atractiva para un clip de Fortnite basado en este evento:
+
+    Tipo de clip: {tipo}
+    Descripción: {descripcion}
+
+    El título debe ser corto, llamativo y divertido. 
+    La descripción debe expandir un poco lo que sucede, con algo de emoción.
+
+    Formato de respuesta en JSON:
+    {{
+        "titulo": "Aquí el título generado",
+        "descripcion": "Aquí la descripción generada"
+    }}
+    """
+
+    payload = {
+        "model": self.model_name,
+        "prompt": prompt,
+        "stream": False
+    }
+
+    try:
+        response = requests.post("http://localhost:11434/api/generate", json=payload)
+        response.raise_for_status()
+        result = response.json().get("response", "")
+
+        # Extraer solo el JSON de la respuesta
+        start_idx = result.find('{')
+        end_idx = result.rfind('}') + 1
+        if start_idx >= 0 and end_idx > start_idx:
+            json_str = result[start_idx:end_idx]
+            return json.loads(json_str)
+        else:
+            return {"titulo": "Clip épico en Fortnite", "descripcion": "Mira este increíble momento en Fortnite."}
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error al comunicarse con Ollama: {e}")
+        return {"titulo": "Momento destacado en Fortnite", "descripcion": "No se pudo generar una descripción personalizada."}
+
+
+def extract_clips(self, video_path, highlights, padding=2):
+    """
+    Extrae los clips destacados del video y genera un archivo .txt con el título y la descripción usando IA.
+
+    Args:
+        video_path: Ruta al archivo de video
+        highlights: Lista de momentos destacables
+        padding: Segundos adicionales antes y después del momento
+
+    Returns:
+        Lista de rutas a los clips generados
+    """
+    if not highlights:
+        print("No se encontraron momentos destacables en el video.")
+        return []
+
+    video_filename = Path(video_path).stem
+    clips_paths = []
+
+    for i, highlight in enumerate(highlights):
+        start_time = max(0, highlight["start"] - padding)
+        end_time = highlight["end"] + padding
+        duration = end_time - start_time
+
+        tipo = highlight["tipo"]
+        descripcion = highlight["descripción"]
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"{video_filename}_{tipo}_{i+1}_{timestamp}.mp4"
+        output_path = self.output_folder / output_filename
+
+        # Generar título y descripción con Ollama
+        ia_text = self.generate_title_description(tipo, descripcion)
+
+        # Crear el archivo de texto con el título y la descripción
+        txt_filename = f"{video_filename}_{tipo}_{i+1}_{timestamp}.txt"
+        txt_path = self.output_folder / txt_filename
+
+        with open(txt_path, "w", encoding="utf-8") as txt_file:
+            txt_file.write(f"Título: {ia_text['titulo']}\n")
+            txt_file.write(f"Descripción: {ia_text['descripcion']}\n")
+            txt_file.write(f"Inicio: {start_time:.2f}s\n")
+            txt_file.write(f"Fin: {end_time:.2f}s\n")
+
+        # Usar FFmpeg para extraer el clip
+        cmd = [
+            "ffmpeg", "-i", video_path,
+            "-ss", str(start_time),
+            "-t", str(duration),
+            "-c:v", "libx264", "-c:a", "aac",
+            "-preset", "fast", "-crf", "22",
+            str(output_path)
+        ]
+
+        print(f"Extrayendo clip {i+1}/{len(highlights)}: {start_time:.2f}s - {end_time:.2f}s")
+        subprocess.run(cmd, check=True)
+
+        clips_paths.append((output_path, txt_path))  # Guardar tanto el video como el .txt
+
+    return clips_paths
+
+
+
     def cleanup(self):
         """Elimina los archivos temporales."""
         for file in self.temp_folder.glob("*"):

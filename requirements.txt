@@ -1,0 +1,11 @@
+numpy
+opencv-python
+torch
+torchaudio
+torchvision
+moviepy
+ffmpeg
+requests
+datetime
+pathlib
+json
