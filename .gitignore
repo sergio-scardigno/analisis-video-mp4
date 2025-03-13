@@ -1,0 +1,9 @@
+/venv/
+/checkpoints/
+/temp/
+/clips/
+.vscode
+videoclip_extractor.log
+eliminacion.mp4
+video-completo.mp4
+video-corto.mp4
